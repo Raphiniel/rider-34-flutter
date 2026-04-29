@@ -4,6 +4,12 @@ import 'package:latlong2/latlong.dart';
 import 'package:go_router/go_router.dart';
 import 'package:rider34/core/router/app_router.dart';
 import 'package:rider34/core/theme/app_theme.dart';
+import 'package:rider34/features/home/data/route_service.dart';
+import 'package:geocoding/geocoding.dart' as geo;
+import 'package:geolocator/geolocator.dart';
+import 'dart:async';
+
+enum SelectionMode { none, origin, destination, stop }
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -26,9 +32,145 @@ class _HomeScreenState extends State<HomeScreen> {
     {'icon': Icons.history_rounded, 'label': 'Recent'},
   ];
 
+  // Routing State
+  LatLng? _originLatLng;
+  LatLng? _destinationLatLng;
+  List<LatLng> _stops = [];
+  List<LatLng> _routePoints = [];
+  Map<String, dynamic>? _routeInfo;
+  SelectionMode _selectionMode = SelectionMode.none;
+  int? _activeStopIndex;
+
+  final _originCtrl = TextEditingController(text: 'Current Location');
+
+  LatLng? _currentLocation;
+  StreamSubscription<Position>? _positionStream;
+
+  @override
+  void initState() {
+    super.initState();
+    _initLocationService();
+  }
+
+  Future<void> _initLocationService() async {
+    bool serviceEnabled;
+    LocationPermission permission;
+
+    serviceEnabled = await Geolocator.isLocationServiceEnabled();
+    if (!serviceEnabled) return;
+
+    permission = await Geolocator.checkPermission();
+    if (permission == LocationPermission.denied) {
+      permission = await Geolocator.requestPermission();
+      if (permission == LocationPermission.denied) return;
+    }
+
+    if (permission == LocationPermission.deniedForever) return;
+
+    // Get initial position
+    final position = await Geolocator.getCurrentPosition();
+    setState(() {
+      _currentLocation = LatLng(position.latitude, position.longitude);
+      _originLatLng ??=
+          _currentLocation; // Set origin to current location by default
+    });
+
+    // Move map to current location
+    _mapController.move(_currentLocation!, 14.5);
+
+    // Listen for updates
+    _positionStream = Geolocator.getPositionStream(
+      locationSettings: const LocationSettings(
+        accuracy: LocationAccuracy.high,
+        distanceFilter: 10,
+      ),
+    ).listen((position) {
+      setState(() {
+        _currentLocation = LatLng(position.latitude, position.longitude);
+      });
+    });
+  }
+
+  Future<void> _updateRoute() async {
+    if (_originLatLng == null || _destinationLatLng == null) {
+      setState(() {
+        _routePoints = [];
+        _routeInfo = null;
+      });
+      return;
+    }
+
+    final result = await RouteService.fetchRoute(
+      _originLatLng!,
+      _destinationLatLng!,
+      waypoints: _stops,
+    );
+
+    if (result != null) {
+      setState(() {
+        _routePoints = result['points'];
+        _routeInfo = {
+          'distance': result['distance'],
+          'duration': result['duration'],
+        };
+      });
+
+      // Fit map to route
+      if (_routePoints.isNotEmpty) {
+        final bounds = LatLngBounds.fromPoints(_routePoints);
+        _mapController.fitCamera(
+          CameraFit.bounds(
+            bounds: bounds,
+            padding: const EdgeInsets.symmetric(horizontal: 50, vertical: 100),
+          ),
+        );
+      }
+    }
+  }
+
+  void _onMapTap(TapPosition tapPosition, LatLng point) {
+    if (_selectionMode == SelectionMode.none) return;
+
+    setState(() {
+      if (_selectionMode == SelectionMode.origin) {
+        _originLatLng = point;
+        _originCtrl.text = 'Selected on Map';
+      } else if (_selectionMode == SelectionMode.destination) {
+        _destinationLatLng = point;
+        _destinationCtrl.text = 'Selected on Map';
+      } else if (_selectionMode == SelectionMode.stop &&
+          _activeStopIndex != null) {
+        if (_activeStopIndex! < _stops.length) {
+          _stops[_activeStopIndex!] = point;
+        } else {
+          _stops.add(point);
+        }
+      }
+      _selectionMode = SelectionMode.none;
+    });
+    _updateRoute();
+  }
+
+  void _addStop() {
+    setState(() {
+      _stops.add(const LatLng(0, 0)); // Placeholder
+      _selectionMode = SelectionMode.stop;
+      _activeStopIndex = _stops.length - 1;
+    });
+  }
+
+  void _removeStop(int index) {
+    setState(() {
+      _stops.removeAt(index);
+    });
+    _updateRoute();
+  }
+
   @override
   void dispose() {
     _destinationCtrl.dispose();
+    _originCtrl.dispose();
+    _positionStream?.cancel();
     super.dispose();
   }
 
@@ -43,17 +185,66 @@ class _HomeScreenState extends State<HomeScreen> {
             options: MapOptions(
               initialCenter: _defaultLocation,
               initialZoom: 14.5,
+              onTap: _onMapTap,
             ),
             children: [
               TileLayer(
                 urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
                 userAgentPackageName: 'com.loficode.rider34',
               ),
+              if (_routePoints.isNotEmpty)
+                PolylineLayer(
+                  polylines: [
+                    Polyline(
+                      points: _routePoints,
+                      color: AppColors.primary,
+                      strokeWidth: 5,
+                    ),
+                  ],
+                ),
+              MarkerLayer(
+                markers: [
+                  // Origin
+                  if (_originLatLng != null)
+                    Marker(
+                      point: _originLatLng!,
+                      width: 40,
+                      height: 40,
+                      child: const _PlaceMarker(
+                          color: AppColors.success,
+                          icon: Icons.person_pin_circle_rounded),
+                    ),
+                  // Destination
+                  if (_destinationLatLng != null)
+                    Marker(
+                      point: _destinationLatLng!,
+                      width: 40,
+                      height: 40,
+                      child: const _PlaceMarker(
+                          color: AppColors.error,
+                          icon: Icons.location_on_rounded),
+                    ),
+                  // Stops
+                  ..._stops.asMap().entries.map((entry) {
+                    final index = entry.key;
+                    final point = entry.value;
+                    if (point.latitude == 0)
+                      return const Marker(
+                          point: LatLng(0, 0), child: SizedBox());
+                    return Marker(
+                      point: point,
+                      width: 32,
+                      height: 32,
+                      child: _StopMarker(index: index + 1),
+                    );
+                  }),
+                ],
+              ),
               // Current location pulsing marker
               MarkerLayer(
                 markers: [
                   Marker(
-                    point: _defaultLocation,
+                    point: _currentLocation ?? _defaultLocation,
                     width: 60,
                     height: 60,
                     child: _PulsingMarker(),
@@ -88,70 +279,148 @@ class _HomeScreenState extends State<HomeScreen> {
 
           // ── Top bar ──
           SafeArea(
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-              child: Row(
-                children: [
-                  // Menu
-                  _MapIconButton(
-                    icon: Icons.menu_rounded,
-                    onTap: () => _openDrawer(context),
-                  ),
-                  const Spacer(),
-                  // "Rider 34" pill
+            child: Column(
+              children: [
+                if (_selectionMode != SelectionMode.none)
                   Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 14,
-                      vertical: 8,
-                    ),
+                    width: double.infinity,
+                    margin: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+                    padding: const EdgeInsets.symmetric(vertical: 12),
                     decoration: BoxDecoration(
-                      color: Colors.white.withOpacity(0.95),
-                      borderRadius: BorderRadius.circular(999),
+                      color: AppColors.primary,
+                      borderRadius: BorderRadius.circular(12),
                       boxShadow: [
                         BoxShadow(
-                          color: Colors.black.withOpacity(0.08),
-                          blurRadius: 8,
-                          offset: const Offset(0, 2),
+                          color: AppColors.primary.withOpacity(0.3),
+                          blurRadius: 12,
+                          offset: const Offset(0, 4),
                         ),
                       ],
                     ),
-                    child: const Text(
-                      'Rider 34',
-                      style: TextStyle(
-                        fontFamily: 'PlusJakartaSans',
-                        fontSize: 14,
-                        fontWeight: FontWeight.w700,
-                        color: AppColors.slate900,
-                      ),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        const Icon(Icons.touch_app_rounded,
+                            color: Colors.white, size: 20),
+                        const SizedBox(width: 12),
+                        Text(
+                          'Tap on map to set ${_selectionMode.name}',
+                          style: const TextStyle(
+                            fontFamily: 'PlusJakartaSans',
+                            color: Colors.white,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ],
                     ),
                   ),
-                  const Spacer(),
-                  // Notifications
-                  Stack(
+                Padding(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                  child: Row(
                     children: [
+                      // Menu
                       _MapIconButton(
-                        icon: Icons.notifications_outlined,
-                        onTap: () {},
+                        icon: Icons.menu_rounded,
+                        onTap: () => _openDrawer(context),
                       ),
-                      Positioned(
-                        top: 6,
-                        right: 6,
-                        child: Container(
-                          width: 8,
-                          height: 8,
-                          decoration: BoxDecoration(
-                            color: AppColors.error,
-                            shape: BoxShape.circle,
-                            border: Border.all(color: Colors.white, width: 1.5),
+                      const Spacer(),
+                      // "Rider 34" pill
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 14,
+                          vertical: 8,
+                        ),
+                        decoration: BoxDecoration(
+                          color: Colors.white.withOpacity(0.95),
+                          borderRadius: BorderRadius.circular(999),
+                          boxShadow: [
+                            BoxShadow(
+                              color: Colors.black.withOpacity(0.08),
+                              blurRadius: 8,
+                              offset: const Offset(0, 2),
+                            ),
+                          ],
+                        ),
+                        child: const Text(
+                          'Rider 34',
+                          style: TextStyle(
+                            fontFamily: 'PlusJakartaSans',
+                            fontSize: 14,
+                            fontWeight: FontWeight.w700,
+                            color: AppColors.slate900,
                           ),
                         ),
                       ),
+                      const Spacer(),
+                      // Notifications
+                      Stack(
+                        children: [
+                          _MapIconButton(
+                            icon: Icons.notifications_outlined,
+                            onTap: () {},
+                          ),
+                          Positioned(
+                            top: 6,
+                            right: 6,
+                            child: Container(
+                              width: 8,
+                              height: 8,
+                              decoration: BoxDecoration(
+                                color: AppColors.error,
+                                shape: BoxShape.circle,
+                                border:
+                                    Border.all(color: Colors.white, width: 1.5),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
                     ],
                   ),
-                ],
-              ),
+                ),
+              ],
             ),
           ),
+
+          // ── Route Info Chip ──
+          if (_routeInfo != null)
+            Positioned(
+              bottom: 440, // Above card
+              left: 16,
+              right: 16,
+              child: Center(
+                child: Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                  decoration: BoxDecoration(
+                    color: AppColors.slate900,
+                    borderRadius: BorderRadius.circular(999),
+                    boxShadow: [
+                      BoxShadow(
+                          color: Colors.black.withOpacity(0.2),
+                          blurRadius: 10,
+                          offset: const Offset(0, 4)),
+                    ],
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(Icons.directions_car_rounded,
+                          color: Colors.white, size: 18),
+                      const SizedBox(width: 8),
+                      Text(
+                        '${_routeInfo!['distance'].toStringAsFixed(1)} km · ${_routeInfo!['duration'].round()} min',
+                        style: const TextStyle(
+                            color: Colors.white,
+                            fontWeight: FontWeight.bold,
+                            fontSize: 13),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
 
           // ── Bottom Sheet ──
           Align(
@@ -166,7 +435,13 @@ class _HomeScreenState extends State<HomeScreen> {
                     alignment: Alignment.centerRight,
                     child: _MapIconButton(
                       icon: Icons.my_location_rounded,
-                      onTap: () => _mapController.move(_defaultLocation, 14.5),
+                      onTap: () {
+                        if (_currentLocation != null) {
+                          _mapController.move(_currentLocation!, 14.5);
+                        } else {
+                          _mapController.move(_defaultLocation, 14.5);
+                        }
+                      },
                     ),
                   ),
                 ),
@@ -202,7 +477,7 @@ class _HomeScreenState extends State<HomeScreen> {
                         ),
 
                         // Location inputs
-                        _LocationInput(
+                        const _LocationInput(
                           icon: Icons.radio_button_checked,
                           iconColor: AppColors.primary,
                           label: 'Pickup Location',
@@ -216,21 +491,47 @@ class _HomeScreenState extends State<HomeScreen> {
                           label: 'Where to?',
                           value: '',
                           controller: _destinationCtrl,
-                          autofocus: true,
-                          trailing: Container(
-                            width: 32,
-                            height: 32,
-                            decoration: BoxDecoration(
-                              color: AppColors.slate200,
-                              shape: BoxShape.circle,
-                            ),
-                            child: const Icon(
-                              Icons.add,
-                              size: 18,
-                              color: AppColors.slate600,
+                          onTap: () => _showSearchSheet(isDestination: true),
+                          trailing: GestureDetector(
+                            onTap: _addStop,
+                            child: Container(
+                              width: 32,
+                              height: 32,
+                              decoration: const BoxDecoration(
+                                color: AppColors.slate200,
+                                shape: BoxShape.circle,
+                              ),
+                              child: const Icon(
+                                Icons.add,
+                                size: 18,
+                                color: AppColors.slate600,
+                              ),
                             ),
                           ),
                         ),
+
+                        // Stops list
+                        if (_stops.isNotEmpty) ...[
+                          const SizedBox(height: 8),
+                          ..._stops.asMap().entries.map((entry) {
+                            final i = entry.key;
+                            return Padding(
+                              padding: const EdgeInsets.only(bottom: 8),
+                              child: _LocationInput(
+                                icon: Icons.circle,
+                                iconColor: AppColors.amber,
+                                label: 'Stop ${i + 1}',
+                                value: 'Stop Location',
+                                onTap: () => _showSearchSheet(stopIndex: i),
+                                trailing: IconButton(
+                                  icon:
+                                      const Icon(Icons.close_rounded, size: 20),
+                                  onPressed: () => _removeStop(i),
+                                ),
+                              ),
+                            );
+                          }),
+                        ],
 
                         const SizedBox(height: 16),
 
@@ -310,6 +611,41 @@ class _HomeScreenState extends State<HomeScreen> {
       builder: (ctx) => _SideMenu(),
     );
   }
+
+  void _showSearchSheet({bool isDestination = false, int? stopIndex}) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) => _LocationSearchSheet(
+        onLocationSelected: (location, address) {
+          setState(() {
+            if (stopIndex != null) {
+              _stops[stopIndex] = location;
+            } else if (isDestination) {
+              _destinationLatLng = location;
+              _destinationCtrl.text = address;
+            } else {
+              _originLatLng = location;
+              _originCtrl.text = address;
+            }
+          });
+          _updateRoute();
+        },
+        onMapPickRequested: () {
+          Navigator.pop(context);
+          setState(() {
+            _selectionMode = stopIndex != null
+                ? SelectionMode.stop
+                : (isDestination
+                    ? SelectionMode.destination
+                    : SelectionMode.origin);
+            _activeStopIndex = stopIndex;
+          });
+        },
+      ),
+    );
+  }
 }
 
 // ── Supporting widgets ──────────────────────────────
@@ -370,6 +706,177 @@ class _PulsingMarkerState extends State<_PulsingMarker>
           ),
         ),
       ],
+    );
+  }
+}
+
+class _PlaceMarker extends StatelessWidget {
+  final Color color;
+  final IconData icon;
+
+  const _PlaceMarker({required this.color, required this.icon});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      decoration: BoxDecoration(
+        color: color,
+        shape: BoxShape.circle,
+        border: Border.all(color: Colors.white, width: 2),
+        boxShadow: [
+          BoxShadow(
+              color: color.withOpacity(0.3),
+              blurRadius: 8,
+              offset: const Offset(0, 2)),
+        ],
+      ),
+      child: Icon(icon, color: Colors.white, size: 20),
+    );
+  }
+}
+
+class _StopMarker extends StatelessWidget {
+  final int index;
+
+  const _StopMarker({required this.index});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      alignment: Alignment.center,
+      decoration: BoxDecoration(
+        color: AppColors.amber,
+        shape: BoxShape.circle,
+        border: Border.all(color: Colors.white, width: 2),
+      ),
+      child: Text(
+        index.toString(),
+        style: const TextStyle(
+          color: Colors.white,
+          fontSize: 12,
+          fontWeight: FontWeight.bold,
+        ),
+      ),
+    );
+  }
+}
+
+class _LocationSearchSheet extends StatefulWidget {
+  final Function(LatLng, String) onLocationSelected;
+  final VoidCallback onMapPickRequested;
+
+  const _LocationSearchSheet({
+    required this.onLocationSelected,
+    required this.onMapPickRequested,
+  });
+
+  @override
+  State<_LocationSearchSheet> createState() => _LocationSearchSheetState();
+}
+
+class _LocationSearchSheetState extends State<_LocationSearchSheet> {
+  final _searchCtrl = TextEditingController();
+  List<geo.Placemark> _results = [];
+  bool _isLoading = false;
+
+  Future<void> _search(String query) async {
+    if (query.isEmpty) return;
+    setState(() => _isLoading = true);
+    try {
+      final locations = await geo.locationFromAddress(query);
+      if (locations.isNotEmpty) {
+        final loc = locations.first;
+        final places =
+            await geo.placemarkFromCoordinates(loc.latitude, loc.longitude);
+        setState(() {
+          _results = places;
+        });
+        // For simplicity in this demo, we'll just pick the first result's location
+        // but keep the place name for the UI.
+        // In a real app, you'd show a list of suggestions.
+      }
+    } catch (e) {
+      print('Search error: $e');
+    }
+    setState(() => _isLoading = false);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(20),
+      decoration: const BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+              width: 40,
+              height: 4,
+              decoration: BoxDecoration(
+                  color: AppColors.slate200,
+                  borderRadius: BorderRadius.circular(2))),
+          const SizedBox(height: 20),
+          Row(
+            children: [
+              Expanded(
+                child: TextField(
+                  controller: _searchCtrl,
+                  autofocus: true,
+                  decoration: InputDecoration(
+                    hintText: 'Search address...',
+                    prefixIcon: const Icon(Icons.search),
+                    suffixIcon: _isLoading
+                        ? const Padding(
+                            padding: EdgeInsets.all(12),
+                            child: CircularProgressIndicator(strokeWidth: 2))
+                        : null,
+                  ),
+                  onSubmitted: _search,
+                ),
+              ),
+              const SizedBox(width: 12),
+              IconButton.filled(
+                onPressed: widget.onMapPickRequested,
+                icon: const Icon(Icons.map_rounded),
+                style: IconButton.styleFrom(backgroundColor: AppColors.primary),
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          if (_results.isNotEmpty)
+            ConstrainedBox(
+              constraints: const BoxConstraints(maxHeight: 300),
+              child: ListView.builder(
+                shrinkWrap: true,
+                itemCount: _results.length,
+                itemBuilder: (context, i) {
+                  final p = _results[i];
+                  final address = '${p.name}, ${p.locality}';
+                  return ListTile(
+                    leading: const Icon(Icons.location_on_outlined,
+                        color: AppColors.slate400),
+                    title: Text(address),
+                    onTap: () async {
+                      final locations = await geo.locationFromAddress(address);
+                      if (locations.isNotEmpty) {
+                        widget.onLocationSelected(
+                          LatLng(locations.first.latitude,
+                              locations.first.longitude),
+                          address,
+                        );
+                        Navigator.pop(context);
+                      }
+                    },
+                  );
+                },
+              ),
+            ),
+          const SizedBox(height: 20),
+        ],
+      ),
     );
   }
 }
@@ -436,8 +943,8 @@ class _LocationInput extends StatelessWidget {
   final String value;
   final TextEditingController? controller;
   final bool readOnly;
-  final bool autofocus;
   final Widget? trailing;
+  final VoidCallback? onTap;
 
   const _LocationInput({
     required this.icon,
@@ -446,68 +953,74 @@ class _LocationInput extends StatelessWidget {
     required this.value,
     this.controller,
     this.readOnly = false,
-    this.autofocus = false,
     this.trailing,
+    this.onTap,
   });
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      margin: const EdgeInsets.symmetric(vertical: 4),
-      decoration: BoxDecoration(
-        color: AppColors.backgroundLight,
-        borderRadius: BorderRadius.circular(12),
-      ),
-      child: Row(
-        children: [
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 14),
-            child: Icon(icon, color: iconColor, size: 20),
-          ),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Padding(
-                  padding: const EdgeInsets.only(top: 8),
-                  child: Text(
-                    label,
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        margin: const EdgeInsets.symmetric(vertical: 4),
+        decoration: BoxDecoration(
+          color: AppColors.backgroundLight,
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: Row(
+          children: [
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 14),
+              child: Icon(icon, color: iconColor, size: 20),
+            ),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.only(top: 8),
+                    child: Text(
+                      label,
+                      style: const TextStyle(
+                        fontFamily: 'PlusJakartaSans',
+                        fontSize: 11,
+                        color: AppColors.slate500,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+                  TextFormField(
+                    controller:
+                        controller ?? TextEditingController(text: value),
+                    readOnly:
+                        true, // Make it always readOnly if we use our own sheet
+                    enabled: false,
+                    onTap: onTap,
                     style: const TextStyle(
                       fontFamily: 'PlusJakartaSans',
-                      fontSize: 11,
-                      color: AppColors.slate500,
                       fontWeight: FontWeight.w600,
+                      fontSize: 15,
+                      color: AppColors.slate900,
+                    ),
+                    decoration: const InputDecoration(
+                      border: InputBorder.none,
+                      isDense: true,
+                      contentPadding: EdgeInsets.only(bottom: 10),
+                      hintText: 'Enter location',
+                      hintStyle: TextStyle(
+                        fontFamily: 'PlusJakartaSans',
+                        color: AppColors.slate400,
+                        fontWeight: FontWeight.w500,
+                      ),
                     ),
                   ),
-                ),
-                TextFormField(
-                  controller: controller ?? TextEditingController(text: value),
-                  readOnly: readOnly,
-                  autofocus: autofocus,
-                  style: const TextStyle(
-                    fontFamily: 'PlusJakartaSans',
-                    fontWeight: FontWeight.w600,
-                    fontSize: 15,
-                    color: AppColors.slate900,
-                  ),
-                  decoration: const InputDecoration(
-                    border: InputBorder.none,
-                    isDense: true,
-                    contentPadding: EdgeInsets.only(bottom: 10),
-                    hintText: 'Enter destination',
-                    hintStyle: TextStyle(
-                      fontFamily: 'PlusJakartaSans',
-                      color: AppColors.slate400,
-                      fontWeight: FontWeight.w500,
-                    ),
-                  ),
-                ),
-              ],
+                ],
+              ),
             ),
-          ),
-          if (trailing != null) trailing!,
-          const SizedBox(width: 10),
-        ],
+            if (trailing != null) trailing!,
+            const SizedBox(width: 10),
+          ],
+        ),
       ),
     );
   }

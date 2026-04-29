@@ -6,7 +6,8 @@ import 'package:rider34/features/auth/presentation/screens/onboarding_screen.dar
 import 'package:rider34/features/auth/presentation/screens/signup_screen.dart';
 import 'package:rider34/features/auth/presentation/screens/login_screen.dart';
 import 'package:rider34/features/auth/presentation/screens/otp_screen.dart';
-import 'package:rider34/features/auth/presentation/screens/role_selection_screen.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:rider34/features/driver/presentation/screens/driver_application_screen.dart';
 import 'package:rider34/features/home/presentation/screens/home_screen.dart';
 import 'package:rider34/features/ride/presentation/screens/offer_fare_screen.dart';
 import 'package:rider34/features/ride/presentation/screens/driver_offers_screen.dart';
@@ -25,7 +26,7 @@ class AppRoutes {
   static const login = '/login';
   static const signup = '/signup';
   static const otp = '/otp';
-  static const roleSelection = '/role-selection';
+  static const driverApplication = '/driver-application';
 
   // Passenger routes
   static const home = '/home';
@@ -42,6 +43,17 @@ class AppRoutes {
   static const profile = '/profile';
   static const rideHistory = '/ride-history';
   static const settings = '/settings';
+}
+
+String? _driverRouteRedirect(BuildContext context, GoRouterState state) {
+  final session = Supabase.instance.client.auth.currentSession;
+  if (session == null) return AppRoutes.login;
+  final userMeta = session.user.userMetadata;
+  final isDriver = userMeta != null && userMeta['role'] == 'driver';
+  if (!isDriver) {
+    return AppRoutes.home;
+  }
+  return null;
 }
 
 final routerProvider = Provider<GoRouter>((ref) {
@@ -78,9 +90,9 @@ final routerProvider = Provider<GoRouter>((ref) {
         },
       ),
       GoRoute(
-        path: AppRoutes.roleSelection,
-        name: 'role-selection',
-        builder: (context, state) => const RoleSelectionScreen(),
+        path: AppRoutes.driverApplication,
+        name: 'driver-application',
+        builder: (context, state) => const DriverApplicationScreen(),
       ),
 
       // Passenger routes
@@ -115,11 +127,13 @@ final routerProvider = Provider<GoRouter>((ref) {
         path: AppRoutes.driverDashboard,
         name: 'driver-dashboard',
         builder: (context, state) => const DriverDashboardScreen(),
+        redirect: _driverRouteRedirect,
       ),
       GoRoute(
         path: AppRoutes.driverRideRequest,
         name: 'driver-ride-request',
         builder: (context, state) => const DriverRideRequestScreen(),
+        redirect: _driverRouteRedirect,
       ),
 
       // Profile routes

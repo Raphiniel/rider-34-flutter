@@ -131,7 +131,7 @@ class AppTheme {
   static ThemeData get light => ThemeData(
         useMaterial3: true,
         fontFamily: 'PlusJakartaSans',
-        colorScheme: ColorScheme.light(
+        colorScheme: const ColorScheme.light(
           primary: AppColors.primary,
           onPrimary: Colors.white,
           secondary: AppColors.slate700,
@@ -177,7 +177,7 @@ class AppTheme {
             textStyle: AppTextStyles.labelLarge,
           ),
         ),
-        inputDecorationTheme: InputDecorationTheme(
+        inputDecorationTheme: const InputDecorationTheme(
           filled: true,
           fillColor: AppColors.backgroundLight,
           border: OutlineInputBorder(
@@ -190,17 +190,17 @@ class AppTheme {
           ),
           focusedBorder: OutlineInputBorder(
             borderRadius: _borderRadius,
-            borderSide: const BorderSide(color: AppColors.primary, width: 2),
+            borderSide: BorderSide(color: AppColors.primary, width: 2),
           ),
           errorBorder: OutlineInputBorder(
             borderRadius: _borderRadius,
-            borderSide: const BorderSide(color: AppColors.error),
+            borderSide: BorderSide(color: AppColors.error),
           ),
-          contentPadding: const EdgeInsets.symmetric(
+          contentPadding: EdgeInsets.symmetric(
             horizontal: 16,
             vertical: 16,
           ),
-          hintStyle: const TextStyle(
+          hintStyle: TextStyle(
             fontFamily: 'PlusJakartaSans',
             color: AppColors.slate400,
             fontWeight: FontWeight.w500,
@@ -236,7 +236,7 @@ class AppTheme {
   static ThemeData get dark => ThemeData(
         useMaterial3: true,
         fontFamily: 'PlusJakartaSans',
-        colorScheme: ColorScheme.dark(
+        colorScheme: const ColorScheme.dark(
           primary: AppColors.primary,
           onPrimary: Colors.white,
           secondary: AppColors.slate300,
@@ -271,7 +271,7 @@ class AppTheme {
             elevation: 0,
           ),
         ),
-        inputDecorationTheme: InputDecorationTheme(
+        inputDecorationTheme: const InputDecorationTheme(
           filled: true,
           fillColor: AppColors.surfaceDark,
           border: OutlineInputBorder(
@@ -284,13 +284,13 @@ class AppTheme {
           ),
           focusedBorder: OutlineInputBorder(
             borderRadius: _borderRadius,
-            borderSide: const BorderSide(color: AppColors.primary, width: 2),
+            borderSide: BorderSide(color: AppColors.primary, width: 2),
           ),
-          contentPadding: const EdgeInsets.symmetric(
+          contentPadding: EdgeInsets.symmetric(
             horizontal: 16,
             vertical: 16,
           ),
-          hintStyle: const TextStyle(
+          hintStyle: TextStyle(
             fontFamily: 'PlusJakartaSans',
             color: AppColors.slate500,
             fontWeight: FontWeight.w500,

@@ -30,7 +30,7 @@ class _OtpScreenState extends State<OtpScreen> {
       final session = Supabase.instance.client.auth.currentSession;
       if (!mounted) return;
       if (session != null) {
-        context.go(AppRoutes.roleSelection);
+        context.go(AppRoutes.home);
       } else {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(

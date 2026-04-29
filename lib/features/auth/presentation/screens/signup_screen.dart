@@ -47,7 +47,7 @@ class _SignupScreenState extends State<SignupScreen> {
 
       if (response.session != null) {
         // Email confirmation is disabled — user is logged in immediately
-        context.go(AppRoutes.roleSelection);
+        context.go(AppRoutes.home);
       } else {
         // Email confirmation is enabled — show "check your email" screen
         context.go(
@@ -161,7 +161,9 @@ class _SignupScreenState extends State<SignupScreen> {
                         if (v == null || v.isEmpty) return 'Enter your email';
                         if (!RegExp(
                           r'^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}$',
-                        ).hasMatch(v)) return 'Enter a valid email';
+                        ).hasMatch(v)) {
+                          return 'Enter a valid email';
+                        }
                         return null;
                       },
                     ),
@@ -206,32 +208,32 @@ class _SignupScreenState extends State<SignupScreen> {
                     // Terms
                     RichText(
                       textAlign: TextAlign.center,
-                      text: TextSpan(
-                        style: const TextStyle(
+                      text: const TextSpan(
+                        style: TextStyle(
                           fontFamily: 'PlusJakartaSans',
                           fontSize: 12,
                           color: AppColors.slate400,
                         ),
                         children: [
-                          const TextSpan(
+                          TextSpan(
                             text: 'By signing up, you agree to our ',
                           ),
                           TextSpan(
                             text: 'Terms of Service',
-                            style: const TextStyle(
+                            style: TextStyle(
                               color: AppColors.primary,
                               fontWeight: FontWeight.w600,
                             ),
                           ),
-                          const TextSpan(text: ' and '),
+                          TextSpan(text: ' and '),
                           TextSpan(
                             text: 'Privacy Policy',
-                            style: const TextStyle(
+                            style: TextStyle(
                               color: AppColors.primary,
                               fontWeight: FontWeight.w600,
                             ),
                           ),
-                          const TextSpan(text: '.'),
+                          TextSpan(text: '.'),
                         ],
                       ),
                     ),

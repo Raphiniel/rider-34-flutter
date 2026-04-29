@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:rider34/core/router/app_router.dart';
 import 'package:rider34/core/theme/app_theme.dart';
 
@@ -8,6 +9,9 @@ class ProfileScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final userMeta = Supabase.instance.client.auth.currentUser?.userMetadata;
+    final isDriver = userMeta != null && userMeta['role'] == 'driver';
+
     return Scaffold(
       backgroundColor: AppColors.backgroundLight,
       appBar: AppBar(
@@ -145,11 +149,18 @@ class ProfileScreen extends StatelessWidget {
             _MenuSection(
               title: 'Account',
               items: [
-                _MenuItem(
-                  icon: Icons.drive_eta_outlined,
-                  label: 'Switch to Driver',
-                  onTap: () => context.go(AppRoutes.driverDashboard),
-                ),
+                if (isDriver)
+                  _MenuItem(
+                    icon: Icons.drive_eta_outlined,
+                    label: 'Switch to Driver',
+                    onTap: () => context.go(AppRoutes.driverDashboard),
+                  )
+                else
+                  _MenuItem(
+                    icon: Icons.assignment_ind_outlined,
+                    label: 'Become a Driver',
+                    onTap: () => context.go(AppRoutes.driverApplication),
+                  ),
                 _MenuItem(
                   icon: Icons.settings_outlined,
                   label: 'Settings',
