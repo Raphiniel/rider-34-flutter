@@ -25,7 +25,7 @@ class UserModel extends Equatable {
   factory UserModel.fromJson(Map<String, dynamic> json) {
     return UserModel(
       id: json['id'] as String,
-      name: json['name'] as String,
+      name: json['full_name'] as String? ?? json['name'] as String? ?? '',
       email: json['email'] as String? ?? '',
       phone: json['phone'] as String? ?? '',
       avatarUrl: json['avatar_url'] as String?,
@@ -39,15 +39,15 @@ class UserModel extends Equatable {
   }
 
   Map<String, dynamic> toJson() => {
-    'id': id,
-    'name': name,
-    'email': email,
-    'phone': phone,
-    'avatar_url': avatarUrl,
-    'role': role.name,
-    'rating': rating,
-    'created_at': createdAt.toIso8601String(),
-  };
+        'id': id,
+        'name': name,
+        'email': email,
+        'phone': phone,
+        'avatar_url': avatarUrl,
+        'role': role.name,
+        'rating': rating,
+        'created_at': createdAt.toIso8601String(),
+      };
 
   @override
   List<Object?> get props => [id, name, email, phone, role];

@@ -1,16 +1,20 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
+
 import 'package:rider34/core/router/app_router.dart';
 import 'package:rider34/core/theme/app_theme.dart';
 
-class ProfileScreen extends StatelessWidget {
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:rider34/shared/providers/user_provider.dart';
+
+class ProfileScreen extends ConsumerWidget {
   const ProfileScreen({super.key});
 
   @override
-  Widget build(BuildContext context) {
-    final userMeta = Supabase.instance.client.auth.currentUser?.userMetadata;
-    final isDriver = userMeta != null && userMeta['role'] == 'driver';
+  Widget build(BuildContext context, WidgetRef ref) {
+    final userAsync = ref.watch(userProvider);
+    final user = userAsync.value;
+    final isDriver = user?.role.name == 'driver';
 
     return Scaffold(
       backgroundColor: AppColors.backgroundLight,
@@ -43,10 +47,10 @@ class ProfileScreen extends StatelessWidget {
                           color: AppColors.primaryLight,
                           shape: BoxShape.circle,
                         ),
-                        child: const Center(
+                        child: Center(
                           child: Text(
-                            'J',
-                            style: TextStyle(
+                            user?.name.isNotEmpty == true ? user!.name[0].toUpperCase() : '?',
+                            style: const TextStyle(
                               fontFamily: 'PlusJakartaSans',
                               fontSize: 36,
                               fontWeight: FontWeight.w800,
@@ -79,18 +83,18 @@ class ProfileScreen extends StatelessWidget {
                   Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      const Text(
-                        'John Doe',
-                        style: TextStyle(
+                      Text(
+                        user?.name ?? 'Loading...',
+                        style: const TextStyle(
                           fontFamily: 'PlusJakartaSans',
                           fontSize: 20,
                           fontWeight: FontWeight.w800,
                           color: AppColors.slate900,
                         ),
                       ),
-                      const Text(
-                        'john@example.com',
-                        style: TextStyle(
+                      Text(
+                        user?.email ?? '',
+                        style: const TextStyle(
                           fontFamily: 'PlusJakartaSans',
                           fontSize: 14,
                           color: AppColors.slate500,

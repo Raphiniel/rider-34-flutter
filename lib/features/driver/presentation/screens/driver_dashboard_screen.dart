@@ -2,19 +2,28 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:rider34/core/router/app_router.dart';
 import 'package:rider34/core/theme/app_theme.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:rider34/shared/providers/user_provider.dart';
 
-class DriverDashboardScreen extends StatefulWidget {
+class DriverDashboardScreen extends ConsumerStatefulWidget {
   const DriverDashboardScreen({super.key});
 
   @override
-  State<DriverDashboardScreen> createState() => _DriverDashboardScreenState();
+  ConsumerState<DriverDashboardScreen> createState() => _DriverDashboardScreenState();
 }
 
-class _DriverDashboardScreenState extends State<DriverDashboardScreen> {
+class _DriverDashboardScreenState extends ConsumerState<DriverDashboardScreen> {
   bool _isOnline = false;
 
   @override
   Widget build(BuildContext context) {
+    final userAsync = ref.watch(userProvider);
+    final userName = userAsync.when(
+      data: (user) => user?.name ?? 'Driver',
+      loading: () => '...',
+      error: (_, __) => 'Error',
+    );
+
     return Scaffold(
       backgroundColor: Colors.white,
       body: SafeArea(
@@ -28,8 +37,8 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen> {
                 children: [
                   Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
-                    children: const [
-                      Text(
+                    children: [
+                      const Text(
                         'Driver Mode',
                         style: TextStyle(
                           fontFamily: 'PlusJakartaSans',
@@ -39,8 +48,8 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen> {
                         ),
                       ),
                       Text(
-                        'Rider 34',
-                        style: TextStyle(
+                        userName,
+                        style: const TextStyle(
                           fontFamily: 'PlusJakartaSans',
                           fontSize: 14,
                           color: AppColors.slate500,

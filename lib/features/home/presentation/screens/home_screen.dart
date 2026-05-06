@@ -8,17 +8,19 @@ import 'package:rider34/features/home/data/route_service.dart';
 import 'package:geocoding/geocoding.dart' as geo;
 import 'package:geolocator/geolocator.dart';
 import 'dart:async';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:rider34/shared/providers/user_provider.dart';
 
 enum SelectionMode { none, origin, destination, stop }
 
-class HomeScreen extends StatefulWidget {
+class HomeScreen extends ConsumerStatefulWidget {
   const HomeScreen({super.key});
 
   @override
-  State<HomeScreen> createState() => _HomeScreenState();
+  ConsumerState<HomeScreen> createState() => _HomeScreenState();
 }
 
-class _HomeScreenState extends State<HomeScreen> {
+class _HomeScreenState extends ConsumerState<HomeScreen> {
   final _mapController = MapController();
   final _destinationCtrl = TextEditingController();
 
@@ -35,7 +37,7 @@ class _HomeScreenState extends State<HomeScreen> {
   // Routing State
   LatLng? _originLatLng;
   LatLng? _destinationLatLng;
-  List<LatLng> _stops = [];
+  final List<LatLng> _stops = [];
   List<LatLng> _routePoints = [];
   Map<String, dynamic>? _routeInfo;
   SelectionMode _selectionMode = SelectionMode.none;
@@ -176,6 +178,13 @@ class _HomeScreenState extends State<HomeScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final userAsync = ref.watch(userProvider);
+    final userName = userAsync.when(
+      data: (user) => user?.name.split(' ').first ?? 'Rider',
+      loading: () => '...',
+      error: (_, __) => 'Error',
+    );
+
     return Scaffold(
       body: Stack(
         children: [
@@ -228,9 +237,10 @@ class _HomeScreenState extends State<HomeScreen> {
                   ..._stops.asMap().entries.map((entry) {
                     final index = entry.key;
                     final point = entry.value;
-                    if (point.latitude == 0)
+                    if (point.latitude == 0) {
                       return const Marker(
                           point: LatLng(0, 0), child: SizedBox());
+                    }
                     return Marker(
                       point: point,
                       width: 32,
@@ -342,9 +352,9 @@ class _HomeScreenState extends State<HomeScreen> {
                             ),
                           ],
                         ),
-                        child: const Text(
-                          'Rider 34',
-                          style: TextStyle(
+                        child: Text(
+                          userName,
+                          style: const TextStyle(
                             fontFamily: 'PlusJakartaSans',
                             fontSize: 14,
                             fontWeight: FontWeight.w700,
